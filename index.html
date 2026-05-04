@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Decode the Chain v3 — demystified</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:#F5F0E8; font-family:system-ui,-apple-system,sans-serif; color:#1a1108; min-height:100vh; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slideIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
+.fu  { animation:fadeUp  0.3s ease forwards; }
+.si  { animation:slideIn 0.25s ease forwards; }
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:#C4A460;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const { useState } = React;
+
+// ── Colors ────────────────────────────────────────────────────
+const OR="#F5853F", RD="#D94F2A", GR="#0D9E6E", GD="#C4A460";
+const PU="#7C5CBF", BL="#2A7ED4", DK="#1a1108";
+const CA="#fffcf7", BD="#e8ddd0";
+
+// ── Chain data (stock at $50) ─────────────────────────────────
+const STOCK = 50.00;
+const CHAIN = [
+  {strike:46,ask:4.50,bid:4.30,last:4.40,delta:0.882,theta:-0.012,gamma:0.028,vega:0.045,volume:1240, oi:3200 },
+  {strike:47,ask:3.60,bid:3.40,last:3.50,delta:0.810,theta:-0.015,gamma:0.038,vega:0.058,volume:870,  oi:2800 },
+  {strike:48,ask:2.75,bid:2.55,last:2.65,delta:0.720,theta:-0.018,gamma:0.051,vega:0.072,volume:1550, oi:4100 },
+  {strike:49,ask:1.95,bid:1.80,last:1.88,delta:0.614,theta:-0.021,gamma:0.065,vega:0.083,volume:2300, oi:5600 },
+  {strike:50,ask:1.30,bid:1.18,last:1.24,delta:0.505,theta:-0.023,gamma:0.072,vega:0.089,volume:6800, oi:12400},
+  {strike:51,ask:0.80,bid:0.70,last:0.75,delta:0.388,theta:-0.021,gamma:0.068,vega:0.083,volume:3100, oi:7200 },
+  {strike:52,ask:0.45,bid:0.38,last:0.42,delta:0.272,theta:-0.017,gamma:0.056,vega:0.068,volume:1800, oi:4500 },
+  {strike:53,ask:0.22,bid:0.17,last:0.20,delta:0.172,theta:-0.012,gamma:0.040,vega:0.050,volume:920,  oi:2100 },
+  {strike:54,ask:0.10,bid:0.07,last:0.09,delta:0.098,theta:-0.007,gamma:0.026,vega:0.033,volume:340,  oi:850  },
+];
+
+// ── Term definitions ──────────────────────────────────────────
+const TERMS = {
+  strike:{icon:"🎯",label:"Strike Price",color:DK,group:"pricing",short:"The locked-in price — the heart of every option contract.",what:"The strike price is the price you agree in advance to buy the stock. It is locked in the moment you purchase the contract and never changes, no matter what the market does.",why:"For a Call option, you need the stock to rise above your strike price for the contract to gain real value at expiration. The strike is your target — your starting line.",analogy:"Think of it like a coupon. A store sells a jacket for $50 today. Your coupon locks in a buy price of $51. If the jacket's price jumps to $60, your coupon is now worth $9. That $51 is your strike price.",rule:null,example:"Stock is at $50. You buy a Call with a $51 strike. The stock needs to climb above $51 for your contract to be in the money at expiration.",zones:[{label:"Strike BELOW stock price",status:"In The Money (ITM)",color:GR,desc:"The stock has already passed your strike. Your contract has real value right now."},{label:"Strike AT stock price",status:"At The Money (ATM)",color:OR,desc:"The stock is right at your strike. Your contract is on the edge — could go either way."},{label:"Strike ABOVE stock price",status:"Out of The Money (OTM)",color:"#8a7560",desc:"The stock hasn't reached your strike yet. It needs to move in your direction."}]},
+  ask:{icon:"🏷️",label:"Ask Price",color:RD,group:"pricing",short:"What you pay to buy the contract.",what:"The Ask is the price sellers want to receive for their contract. When you buy a Call or Put, you pay the Ask. It is always the higher of the two quoted prices on the chain.",why:"The Ask × 100 shares = your total cost for one contract. That is your maximum risk — the most you can lose on this trade if the option expires worthless.",analogy:"Like a price tag in a store. The seller has set a price. You can pay it immediately and walk away with the contract, or try to negotiate.",rule:"Use the Ask as your ceiling — the worst price you would accept. Then look at the Last price to see what sellers actually took recently, and try a limit order in between.",example:"Ask is $1.30. Your cost = $1.30 × 100 = $130 per contract. That $130 is your maximum risk on this trade.",zones:null},
+  bid:{icon:"🤝",label:"Bid Price",color:BL,group:"pricing",short:"What you receive when you sell the contract.",what:"The Bid is what buyers are currently willing to pay. When you want to exit your trade and sell the contract, you receive the Bid price. It is always the lower of the two quoted prices.",why:"The gap between Ask and Bid is called the Spread. A tight spread = fair liquid market. A wide spread works against you on both sides — you pay more to get in and receive less when you get out.",analogy:"Like selling a used car. The buyer offers you $1,180 (Bid). You listed it for $1,300 (Ask). A deal happens somewhere in between.",rule:"Spread % = (Ask − Bid) ÷ Ask. Under 5% is clean. Over 10% means the market is thin — enter with caution.",example:"Ask $1.30, Bid $1.18. Spread = $0.12 = 9.2%. If you bought at the Ask and sold immediately at the Bid, you would lose $12 per contract before the stock moves at all.",zones:null},
+  last:{icon:"🕐",label:"Last Price",color:GD,group:"pricing",short:"The most recent real trade — your negotiation anchor.",what:"The Last price is where the most recent actual transaction happened. A real buyer and seller agreed at this number. It is not what people are asking or offering — it is what they did.",why:"Last is your most powerful tool for placing a smart limit order. It tells you sellers have been willing to go this low recently. You use it to target a better entry than the full Ask price.",analogy:"Like checking what the last house on your street sold for before listing yours. Not the asking price — the actual price someone paid.",rule:"Before placing any order, check Last. Target your limit between Last and Ask. Example: Ask $1.30, Last $1.24 → try $1.25 or $1.26. Saves money on every trade.",example:"Ask $1.30 · Last $1.24 · Bid $1.18. Place a limit at $1.25. You are offering just above what sellers recently accepted. Smart and disciplined.",zones:null},
+  delta:{icon:"📡",label:"Delta (Δ)",color:OR,group:"greeks",short:"Your direction meter — how much the contract moves per $1 stock move.",what:"Delta measures how much your contract's price moves for every $1 the stock moves. A Delta of 0.50 means your contract gains about $0.50 for every $1 the stock rises. It ranges from 0 to 1.",why:"Delta tells you how connected your contract is to the stock. High Delta = moves almost like owning shares. Low Delta = barely responds. You want to be in the responsive zone — not too high, not too low.",analogy:"Think of Delta as a volume dial from 0 to 1. At 0 the stock's movement makes no sound in your contract. At 1 it is full volume — every dollar the stock moves, your contract moves a dollar.",rule:"Sweet spot: 0.40 to 0.60. This keeps you near at-the-money — responsive enough to profit from stock movement without overpaying for deep ITM or gambling on deep OTM.",example:"Stock moves up $2. Your Delta is 0.50. Contract gains ≈ $1.00 per share × 100 shares = $100 gain on the contract.",zones:[{label:"0.80 – 1.00",status:"Deep ITM",color:GR,desc:"Moves almost like owning the stock. Expensive. Less leverage."},{label:"0.40 – 0.60 ✓",status:"Sweet Spot (Dominique's zone)",color:OR,desc:"Balanced — responds well to movement without overpaying."},{label:"0.20 – 0.40",status:"OTM",color:GD,desc:"Cheaper but needs a big stock move. Stock can rise and contract barely moves."},{label:"0.00 – 0.20",status:"Deep OTM",color:RD,desc:"Very cheap. Needs a large, fast move. High risk of expiring worthless."}]},
+  theta:{icon:"⏳",label:"Theta (Θ)",color:RD,group:"greeks",short:"Daily time decay — value your contract loses every single day.",what:"Theta is how much value your option loses every single day — even if the stock does not move at all. It is always shown as a negative number because it always works against the buyer.",why:"Every option has an expiration date. As that date gets closer, the contract loses its time value. Theta measures how fast. In the final weeks, Theta accelerates sharply — the decay speeds up right when you need time the most.",analogy:"Your contract is an ice cube. Stock movement adds ice. Theta melts it every single day regardless. You need the stock to add ice faster than Theta melts it.",rule:"Theta should be no more than 50% of your Delta. Example: Delta 0.50, Theta −0.023. That is 4.6% — well under the limit. This means time decay is not outpacing your direction advantage.",example:"You buy a contract Monday. By Friday — stock unmoved — you have lost 5 days × $0.023 = $0.115 per share × 100 = $11.50 in Theta decay. That cost is automatic.",zones:[{label:"30+ days to expiry",status:"Safe Zone",color:GR,desc:"Decay is slow. Your thesis has time to play out without pressure."},{label:"15–30 days to expiry",status:"Caution",color:GD,desc:"Decay picking up. The stock needs to be moving your way."},{label:"Under 15 days",status:"Danger Zone",color:RD,desc:"Value evaporating quickly. Not recommended for beginners."}]},
+  gamma:{icon:"⚡",label:"Gamma (Γ)",color:PU,group:"greeks",short:"How fast Delta changes — Delta's accelerator.",what:"Gamma measures how much your Delta changes when the stock moves $1. If Gamma is 0.072, then every $1 the stock moves, your Delta shifts by 0.072. It is the rate of change of Delta.",why:"Gamma is highest near ATM and near expiration. It can work for you — making your contract more responsive the further the stock moves in your direction — or against you if the stock reverses.",analogy:"Delta is your car's current speed. Gamma is your car's acceleration. High acceleration means your speed changes fast — in either direction.",rule:"Gamma is an advanced concept. At beginner level just know: Gamma is highest near ATM, which is one reason ATM options are so active and responsive. You do not need to trade Gamma — but understanding it helps.",example:"Stock at $50. Delta is 0.50, Gamma 0.07. Stock moves to $51 → Delta becomes ≈ 0.57. The contract is now even more responsive to the next dollar move.",zones:null},
+  vega:{icon:"🌪️",label:"Vega (V)",color:BL,group:"greeks",short:"Volatility gauge — how news and earnings affect your contract's value.",what:"Vega measures how much your contract's value changes for every 1% change in Implied Volatility (IV). High Vega means your contract is highly sensitive to market uncertainty, news, and earnings.",why:"When a company is about to report earnings, volatility spikes — inflating option premiums. After the announcement, volatility collapses — crushing option prices even if the stock moved in your direction. This is called a Volatility Crush.",analogy:"Vega is like storm insurance. Before a storm warning, insurance prices jump. After the storm passes — even if it was bad — insurance cheapens fast. Buying high-Vega options before earnings is like buying expensive storm insurance.",rule:"Always check if an earnings date falls within your expiration window before entering a trade. High Vega near earnings = extra risk. The stock might move your way and you still lose because volatility collapsed.",example:"You buy a Call before earnings. Stock reports great results and rises $3. But IV drops from 60% to 25%. Your contract loses significant Vega value — and your trade ends as a loss even though you were right about direction.",zones:null},
+  volume:{icon:"📊",label:"Volume",color:GD,group:"liquidity",short:"Contracts traded today — today's activity level.",what:"Volume is the total number of contracts that have been bought and sold today. It resets to zero every morning at market open and builds through the session. Seeing zero volume when markets are closed is completely normal.",why:"High volume means active participation — people are trading this strike right now. That means you can enter and exit quickly at fair prices. Low volume means fewer participants and potentially difficult exits.",analogy:"Like foot traffic in a store. A busy store with hundreds of customers means fast transactions at fair prices. An empty store makes it hard to find someone willing to trade with you.",rule:"Check volume during market hours before entering. Look for at least a few hundred contracts on your chosen strike. Low volume today can still mean the strike is liquid — always check Open Interest alongside it.",example:"Strike $50 shows 6,800 volume — the most active on this chain. Strike $54 shows only 340. Exiting the $54 position quickly and fairly would be much harder.",zones:null},
+  oi:{icon:"🏛️",label:"Open Interest",color:GR,group:"liquidity",short:"Total open contracts — the deeper measure of liquidity.",what:"Open Interest is the total number of contracts currently open and not yet closed. Unlike Volume, it does not reset daily. It only changes when new contracts are opened or existing ones are closed out.",why:"Open Interest tells you the overall depth of the market for a specific strike. High OI means many traders have positions here — it is much easier to find a buyer when you want to exit. Low OI means you could be alone in the position.",analogy:"Volume is how many people walked through the store door today. Open Interest is how many people are still inside the building. Total crowd size versus today's visitors.",rule:"Look for 500 or more open interest on your strike before entering. Lower OI is a yellow flag — not always a dealbreaker, but check the spread carefully. Tight spread with lower OI can still be tradeable.",example:"Strike $50 has 12,400 open interest — very deep. Strike $54 has only 850. Selling the $54 position in a hurry may mean accepting a worse price to find a buyer quickly.",zones:[{label:"500+ open interest",status:"Good",color:GR,desc:"Healthy liquidity. Easier to enter and exit at a fair price."},{label:"200–500 open interest",status:"Caution",color:GD,desc:"Check the spread before entering. Manageable but watch closely."},{label:"Under 200 open interest",status:"Warning",color:RD,desc:"Thin market. Wide spreads likely. Hard to exit at a fair price."}]},
+};
+
+const GROUPS = {
+  pricing:  {label:"💵 Pricing",   color:RD,keys:["strike","ask","bid","last"],    desc:"The four price columns that tell you what a contract costs and where real trades happen."},
+  greeks:   {label:"🔢 The Greeks", color:OR,keys:["delta","theta","gamma","vega"], desc:"Mathematical measures that describe how your contract behaves and what risks you carry."},
+  liquidity:{label:"💧 Liquidity",  color:GR,keys:["volume","oi"],                  desc:"Measures of market activity — how easy it is to get in and out of a position."},
+};
+
+// ── Helpers ───────────────────────────────────────────────────
+function getM(s) { return s < STOCK ? "ITM" : s === STOCK ? "ATM" : "OTM"; }
+function fmtK(v) { return v >= 1000 ? (v/1000).toFixed(1)+"K" : v.toString(); }
+
+// ── Shared sub-components (all OUTSIDE App) ───────────────────
+
+function NextBtn({ label, onClick }) {
+  return (
+    <button onClick={onClick} style={{background:OR,border:"none",borderRadius:"999px",padding:"10px 26px",color:"#fff",fontWeight:"700",fontSize:"0.82rem",letterSpacing:"0.06em",cursor:"pointer",display:"flex",alignItems:"center",gap:"6px",margin:"24px auto 0"}}>
+      {label} →
+    </button>
+  );
+}
+
+function MTag({ m }) {
+  const c={ITM:{bg:"#e8faf3",color:GR},ATM:{bg:"#fff4eb",color:OR},OTM:{bg:"#f7f0e6",color:"#8a7560"}}[m];
+  return <span style={{display:"inline-block",padding:"2px 7px",borderRadius:"999px",background:c.bg,color:c.color,fontSize:"9px",fontWeight:"700",letterSpacing:"0.08em"}}>{m}</span>;
+}
+
+function ZoneRow({ z }) {
+  return (
+    <div style={{display:"flex",gap:"10px",alignItems:"flex-start",padding:"8px 12px",borderRadius:"8px",background:"#f7f0e6",marginBottom:"5px"}}>
+      <div style={{width:"7px",height:"7px",borderRadius:"50%",background:z.color,marginTop:"5px",flexShrink:0}}/>
+      <div>
+        <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"2px"}}>
+          <span style={{fontWeight:"700",fontSize:"0.75rem",color:DK}}>{z.label}</span>
+          <span style={{fontSize:"0.68rem",fontWeight:"700",color:z.color,background:"#fff",padding:"1px 7px",borderRadius:"999px",border:"1px solid "+z.color+"44"}}>{z.status}</span>
+        </div>
+        <div style={{fontSize:"0.72rem",color:"#5a4535",lineHeight:"1.5"}}>{z.desc}</div>
+      </div>
+    </div>
+  );
+}
+
+function TermCard({ termKey, isOpen, onToggle }) {
+  const t = TERMS[termKey];
+  return (
+    <div style={{border:"1px solid "+BD,borderRadius:"12px",overflow:"hidden",marginBottom:"8px",background:CA}}>
+      <div onClick={onToggle} style={{display:"flex",alignItems:"center",gap:"12px",padding:"14px 16px",cursor:"pointer",borderLeft:"4px solid "+t.color,background:isOpen?"#fffcf7":CA,transition:"background 0.15s"}}>
+        <span style={{fontSize:"1.2rem",flexShrink:0}}>{t.icon}</span>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:"700",fontSize:"0.9rem",color:DK,marginBottom:"2px"}}>{t.label}</div>
+          <div style={{fontSize:"0.75rem",color:"#8a7560",lineHeight:"1.4"}}>{t.short}</div>
+        </div>
+        <span style={{color:"#8a7560",fontSize:"13px",flexShrink:0,transition:"transform 0.2s",transform:isOpen?"rotate(180deg)":"rotate(0deg)"}}>▼</span>
+      </div>
+      {isOpen && (
+        <div className="fu" style={{borderTop:"1px solid "+BD}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0"}}>
+            <div style={{padding:"16px",borderRight:"1px solid "+BD}}>
+              <Sec icon="📖" label="What it is" bg="#f7f0e6">{t.what}</Sec>
+              <Sec icon="💡" label="Why it matters" bg="#f7f0e6" mt>{t.why}</Sec>
+              <Sec icon="🧠" label="Simple analogy" bg="#fff4eb" mt italic>{t.analogy}</Sec>
+            </div>
+            <div style={{padding:"16px"}}>
+              {t.rule && <Sec icon="⚡" label="The Rule" bg="linear-gradient(130deg,#1a1108,#2c1d0e)" dark>{t.rule}</Sec>}
+              <Sec icon="📊" label="Real example" bg="#e8faf3" green mt={!!t.rule}>{t.example}</Sec>
+              {t.zones && <div style={{marginTop:"12px"}}><div style={{fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.12em",textTransform:"uppercase",color:"#8a7560",marginBottom:"7px"}}>Reference zones</div>{t.zones.map((z,i)=><ZoneRow key={i} z={z}/>)}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Sec({ icon, label, bg, dark, green, italic, mt, children }) {
+  return (
+    <div style={{background:bg,borderRadius:"8px",padding:"11px 13px",marginTop:mt?"10px":"0"}}>
+      <div style={{fontSize:"0.62rem",fontWeight:"700",letterSpacing:"0.12em",textTransform:"uppercase",color:dark?"#9a7a55":green?"#065f46":"#8a7560",marginBottom:"6px"}}>{icon} {label}</div>
+      <div style={{fontSize:"0.8rem",lineHeight:"1.65",color:dark?"#e8ddd0":green?"#052e16":"#3d2e1e",fontStyle:italic?"italic":"normal"}}>{children}</div>
+    </div>
+  );
+}
+
+function ColHead({ colKey, activeCol, onClick }) {
+  const isActive = activeCol === colKey;
+  const t = TERMS[colKey];
+  if (!t) return <th style={{padding:"9px 10px"}}><span style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560"}}>{colKey.toUpperCase()}</span></th>;
+  return (
+    <th onClick={() => onClick(colKey)} style={{padding:"9px 10px",cursor:"pointer",userSelect:"none",borderBottom:isActive?"3px solid "+t.color:"3px solid transparent",background:isActive?"#fff4eb":"transparent",transition:"all 0.15s",whiteSpace:"nowrap"}}>
+      <span style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:isActive?t.color:"#8a7560",display:"flex",alignItems:"center",gap:"3px"}}>
+        {t.icon} {t.label.split(" ")[0]} {t.label.includes("(") ? t.label.match(/\(.\)/)?.[0]||"" : ""}
+        <span style={{opacity:0.4,fontSize:"9px"}}>▼</span>
+      </span>
+    </th>
+  );
+}
+
+function ChainInfoPanel({ colKey }) {
+  const t = TERMS[colKey];
+  if (!t) return null;
+  return (
+    <div className="fu" style={{background:CA,border:"1px solid "+BD,borderRadius:"12px",padding:"16px 18px",marginTop:"12px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
+        <span style={{fontSize:"1.3rem"}}>{t.icon}</span>
+        <div>
+          <div style={{fontWeight:"700",fontSize:"1rem",color:DK}}>{t.label}</div>
+          <div style={{fontSize:"0.75rem",color:"#8a7560",fontStyle:"italic"}}>{t.short}</div>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px"}}>
+        <div style={{background:"#f7f0e6",borderRadius:"8px",padding:"10px 12px"}}>
+          <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"5px"}}>📖 What it is</div>
+          <div style={{fontSize:"0.78rem",color:"#3d2e1e",lineHeight:"1.55"}}>{t.what}</div>
+        </div>
+        <div style={{background:"#fff4eb",border:"1px solid #fad0a8",borderRadius:"8px",padding:"10px 12px"}}>
+          <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:OR,marginBottom:"5px"}}>🧠 Analogy</div>
+          <div style={{fontSize:"0.78rem",color:"#3d2e1e",lineHeight:"1.55",fontStyle:"italic"}}>{t.analogy}</div>
+        </div>
+        <div style={{background:t.rule?"linear-gradient(130deg,#1a1108,#2c1d0e)":"#e8faf3",borderRadius:"8px",padding:"10px 12px"}}>
+          <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:t.rule?"#9a7a55":"#065f46",marginBottom:"5px"}}>{t.rule?"⚡ The Rule":"📊 Example"}</div>
+          <div style={{fontSize:"0.78rem",color:t.rule?"#e8ddd0":"#052e16",lineHeight:"1.55"}}>{t.rule||t.example}</div>
+        </div>
+      </div>
+      {t.zones && <div style={{marginTop:"10px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"6px"}}>{t.zones.map((z,i)=><ZoneRow key={i} z={z}/>)}</div>}
+    </div>
+  );
+}
+
+// ── Price Line Visual ─────────────────────────────────────────
+function PriceLine({ mode }) {
+  const isCall = mode === "call";
+  const stock = 50;
+  const strikes = [46, 48, 50, 52, 54];
+  const labels  = { 46:"$46", 48:"$48", 50:"$50", 52:"$52", 54:"$54" };
+
+  function getMoney(s) {
+    if (s === stock) return "ATM";
+    if (isCall) return s < stock ? "ITM" : "OTM";
+    return s > stock ? "ITM" : "OTM";
+  }
+
+  function getColor(m) {
+    return m === "ITM" ? GR : m === "ATM" ? OR : "#b0a090";
+  }
+
+  return (
+    <div style={{padding:"20px 16px",background:"#f7f0e6",borderRadius:"12px",marginBottom:"12px"}}>
+      {/* Line */}
+      <div style={{position:"relative",height:"6px",background:"#e0d4c0",borderRadius:"3px",margin:"30px 10px 40px"}}>
+        {/* Stock price marker */}
+        <div style={{position:"absolute",left:"50%",transform:"translateX(-50%)",top:"-28px",textAlign:"center"}}>
+          <div style={{background:DK,color:"#fff",fontSize:"0.65rem",fontWeight:"700",padding:"2px 8px",borderRadius:"999px",whiteSpace:"nowrap"}}>Stock $50.00</div>
+          <div style={{width:"2px",height:"10px",background:DK,margin:"2px auto 0"}}/>
+        </div>
+        <div style={{position:"absolute",left:"50%",transform:"translateX(-50%)",width:"12px",height:"12px",borderRadius:"50%",background:DK,top:"-3px"}}/>
+
+        {/* Strike markers */}
+        {strikes.map((s, i) => {
+          const pct = (i / (strikes.length - 1)) * 100;
+          const m = getMoney(s);
+          const c = getColor(m);
+          return (
+            <div key={s} style={{position:"absolute",left:pct+"%",transform:"translateX(-50%)",textAlign:"center"}}>
+              <div style={{width:"14px",height:"14px",borderRadius:"50%",background:c,border:"2px solid #fff",top:"-4px",position:"absolute",left:"50%",transform:"translateX(-50%)",boxShadow:"0 1px 4px rgba(0,0,0,0.15)"}}/>
+              <div style={{marginTop:"24px",fontSize:"0.72rem",fontWeight:"700",color:c,whiteSpace:"nowrap"}}>{labels[s]}</div>
+              <div style={{fontSize:"0.6rem",fontWeight:"700",color:c,letterSpacing:"0.06em"}}>{m}</div>
+            </div>
+          );
+        })}
+
+        {/* Zone fill */}
+        {isCall ? (
+          <div style={{position:"absolute",left:"0",width:"50%",height:"100%",background:GR+"44",borderRadius:"3px 0 0 3px"}}/>
+        ) : (
+          <div style={{position:"absolute",right:"0",width:"50%",height:"100%",background:GR+"44",borderRadius:"0 3px 3px 0"}}/>
+        )}
+      </div>
+
+      {/* Direction label */}
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:"4px"}}>
+        <div style={{fontSize:"0.68rem",color:"#8a7560",display:"flex",alignItems:"center",gap:"4px"}}>
+          <span>←</span>
+          <span style={{fontWeight:isCall?"400":"700",color:!isCall?RD:"#8a7560"}}>{!isCall?"Profit zone (Put goes ITM)":"Lower strikes"}</span>
+        </div>
+        <div style={{fontSize:"0.68rem",color:"#8a7560",display:"flex",alignItems:"center",gap:"4px"}}>
+          <span style={{fontWeight:isCall?"700":"400",color:isCall?GR:"#8a7560"}}>{isCall?"Profit zone (Call goes ITM)":"Higher strikes"}</span>
+          <span>→</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tab content components ────────────────────────────────────
+
+function Tab1({ onNext }) {
+  return (
+    <div className="fu">
+      <div style={{background:DK,borderRadius:"14px",padding:"26px 28px",marginBottom:"16px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:0,right:0,width:"180px",height:"180px",background:OR,opacity:0.05,borderRadius:"50%",transform:"translate(50px,-50px)"}}/>
+        <div style={{fontSize:"0.62rem",fontWeight:"700",letterSpacing:"0.15em",textTransform:"uppercase",color:"#9a7a55",marginBottom:"8px"}}>Start here</div>
+        <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(1.4rem,3vw,2rem)",color:"#fff",lineHeight:"1.2",marginBottom:"10px"}}>What is an Options Contract?</h2>
+        <p style={{fontSize:"0.87rem",color:"#d4a87a",lineHeight:"1.7",maxWidth:"540px"}}>An option gives you the <strong style={{color:"#fff"}}>right — but not the obligation</strong> — to buy or sell a stock at a specific price, before a specific date. You are trading the <strong style={{color:"#fff"}}>contract itself</strong>, not necessarily buying the stock.</p>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"16px"}}>
+        {[
+          {type:"Call Option 📈",color:GR,bg:"#e8faf3",border:"#b6f0da",thesis:"Bullish — you think the stock is going UP",right:"The right to buy at the strike price",profit:"Stock rises above your strike price",risk:"You lose only the premium you paid",who:"Buyers who expect the stock to climb"},
+          {type:"Put Option 📉",color:RD,bg:"#fff0ee",border:"#fdc5c5",thesis:"Bearish — you think the stock is going DOWN",right:"The right to sell at the strike price",profit:"Stock falls below your strike price",risk:"You lose only the premium you paid",who:"Buyers who expect the stock to fall"},
+        ].map(c => (
+          <div key={c.type} style={{background:c.bg,border:"1px solid "+c.border,borderRadius:"12px",padding:"18px 20px"}}>
+            <div style={{fontWeight:"700",fontSize:"1rem",color:c.color,marginBottom:"10px"}}>{c.type}</div>
+            {[["Your thesis",c.thesis],["Right you get",c.right],["You profit when",c.profit],["Max risk",c.risk],["Best for",c.who]].map(([l,v])=>(
+              <div key={l} style={{marginBottom:"7px"}}>
+                <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:c.color,marginBottom:"2px"}}>{l}</div>
+                <div style={{fontSize:"0.8rem",color:DK,lineHeight:"1.45"}}>{v}</div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:CA,border:"1px solid "+BD,borderRadius:"12px",padding:"18px 20px",marginBottom:"16px"}}>
+        <div style={{fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.12em",textTransform:"uppercase",color:OR,marginBottom:"10px"}}>💡 The key idea for beginners</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px"}}>
+          {[{n:"1",title:"You buy a contract",desc:"Not the stock itself. You pay a premium — that is your only cost and maximum risk."},{n:"2",title:"The stock moves",desc:"If the stock moves in your direction, the contract gains value — often faster than the stock itself."},{n:"3",title:"You sell the contract",desc:"You sell the contract for a profit before expiration. You never need to buy the actual stock."}].map(s=>(
+            <div key={s.n} style={{background:"#f7f0e6",borderRadius:"10px",padding:"14px"}}>
+              <div style={{width:"26px",height:"26px",borderRadius:"50%",background:OR,color:"#fff",fontWeight:"700",fontSize:"0.8rem",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:"8px"}}>{s.n}</div>
+              <div style={{fontWeight:"700",fontSize:"0.82rem",color:DK,marginBottom:"4px"}}>{s.title}</div>
+              <div style={{fontSize:"0.75rem",color:"#5a4535",lineHeight:"1.5"}}>{s.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{background:"#fff4eb",border:"1px solid #fad0a8",borderRadius:"12px",padding:"14px 18px",display:"flex",gap:"12px",alignItems:"flex-start"}}>
+        <span style={{fontSize:"1.2rem",flexShrink:0}}>⚠️</span>
+        <div>
+          <div style={{fontWeight:"700",fontSize:"0.82rem",color:DK,marginBottom:"4px"}}>Options trading involves real risk</div>
+          <div style={{fontSize:"0.78rem",color:"#5a4535",lineHeight:"1.55"}}>When you buy a contract, your maximum loss is the premium you paid. But options can expire worthless. This education is for learning only, not a trade recommendation.</div>
+        </div>
+      </div>
+      <NextBtn label="Next: Learn the Terms" onClick={onNext}/>
+    </div>
+  );
+}
+
+function Tab2({ onNext }) {
+  const [open, setOpen] = useState(null);
+  function toggle(k) { setOpen(prev => prev === k ? null : k); }
+  return (
+    <div className="fu">
+      <div style={{marginBottom:"18px"}}>
+        <h2 style={{fontFamily:"Georgia,serif",fontSize:"1.4rem",color:DK,marginBottom:"5px"}}>Learn the Terms</h2>
+        <p style={{fontSize:"0.85rem",color:"#8a7560",lineHeight:"1.55"}}>Every column on the options chain has a name and a meaning. Click each term below to expand the full explanation. Work through them in order — or jump to what interests you.</p>
+      </div>
+      {Object.entries(GROUPS).map(([gKey, group]) => (
+        <div key={gKey} style={{marginBottom:"20px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px",paddingBottom:"8px",borderBottom:"2px solid "+group.color+"33"}}>
+            <div style={{width:"3px",height:"22px",background:group.color,borderRadius:"2px"}}/>
+            <div>
+              <div style={{fontWeight:"700",fontSize:"0.88rem",color:DK}}>{group.label}</div>
+              <div style={{fontSize:"0.72rem",color:"#8a7560"}}>{group.desc}</div>
+            </div>
+          </div>
+          {group.keys.map(k => <TermCard key={k} termKey={k} isOpen={open===k} onToggle={()=>toggle(k)}/>)}
+        </div>
+      ))}
+      <NextBtn label="Next: In, At & Out of the Money" onClick={onNext}/>
+    </div>
+  );
+}
+
+function Tab3({ onNext }) {
+  const [mode, setMode] = useState("call");
+  const isCall = mode === "call";
+
+  const callRows = [
+    {strike:"$46–$49", m:"ITM", color:GR, badge:"✅ In The Money", why:"Strike is BELOW the stock price ($50). The stock has already passed your strike. Your Call has real value right now.", practical:"You are already winning. The contract would have value if it expired today."},
+    {strike:"$50",     m:"ATM", color:OR, badge:"➡️ At The Money", why:"Strike is AT the stock price ($50). You are right on the line — the stock just needs to keep moving up.", practical:"Most active and balanced. Delta is near 0.50 — the sweet spot Dominique recommends."},
+    {strike:"$51–$54", m:"OTM", color:"#8a7560", badge:"⏳ Out of The Money", why:"Strike is ABOVE the stock price ($50). The stock needs to rise above your strike to have value.", practical:"Cheaper contracts but the stock has to move in your direction before expiration."},
+  ];
+  const putRows = [
+    {strike:"$51–$54", m:"ITM", color:GR, badge:"✅ In The Money", why:"Strike is ABOVE the stock price ($50). The stock has already fallen below your strike. Your Put has real value right now.", practical:"You are already winning on this Put. The stock fell below your strike — exactly what you wanted."},
+    {strike:"$50",     m:"ATM", color:OR, badge:"➡️ At The Money", why:"Strike is AT the stock price ($50). Right on the line — the stock needs to keep falling for you to profit.", practical:"Most balanced Put position. High activity, Delta near −0.50."},
+    {strike:"$46–$49", m:"OTM", color:"#8a7560", badge:"⏳ Out of The Money", why:"Strike is BELOW the stock price ($50). The stock needs to fall below your strike for this Put to have value.", practical:"Cheaper Put contracts but you need the stock to drop far enough before expiration."},
+  ];
+
+  const rows = isCall ? callRows : putRows;
+
+  return (
+    <div className="fu">
+      <div style={{marginBottom:"18px"}}>
+        <h2 style={{fontFamily:"Georgia,serif",fontSize:"1.4rem",color:DK,marginBottom:"5px"}}>In, At &amp; Out of the Money</h2>
+        <p style={{fontSize:"0.85rem",color:"#8a7560",lineHeight:"1.55"}}>Where your strike price sits relative to the current stock price determines whether your option has value right now — or still needs the stock to move. This is called <strong style={{color:DK}}>moneyness</strong>.</p>
+      </div>
+
+      {/* Key concept callout */}
+      <div style={{background:"linear-gradient(130deg,#1a1108,#2c1d0e)",borderRadius:"12px",padding:"16px 20px",marginBottom:"16px"}}>
+        <div style={{fontSize:"0.62rem",fontWeight:"700",letterSpacing:"0.15em",textTransform:"uppercase",color:"#9a7a55",marginBottom:"8px"}}>⚡ The most important thing to understand</div>
+        <div style={{fontSize:"0.88rem",color:"#e8ddd0",lineHeight:"1.7"}}>
+          Moneyness is <strong style={{color:OR}}>not the same for Calls and Puts</strong>. They work in opposite directions — because Calls profit when stocks go UP and Puts profit when stocks go DOWN. Use the toggle below to see how moneyness flips between the two.
+        </div>
+      </div>
+
+      {/* Toggle */}
+      <div style={{display:"flex",gap:"3px",background:"#e4d8c8",borderRadius:"10px",padding:"3px",marginBottom:"16px",maxWidth:"320px",margin:"0 auto 16px"}}>
+        {[["call","📈 Buy Call"],["put","📉 Buy Put"]].map(([m,l]) => (
+          <button key={m} onClick={() => setMode(m)} style={{flex:1,padding:"9px 12px",border:"none",borderRadius:"8px",cursor:"pointer",fontWeight:"700",fontSize:"0.8rem",transition:"all 0.18s",background:mode===m?"#fff":"transparent",color:mode===m?(m==="call"?GR:RD):"#8a7560",boxShadow:mode===m?"0 1px 5px rgba(0,0,0,0.1)":"none"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* Price line visual */}
+      <div className="si">
+        <PriceLine mode={mode}/>
+      </div>
+
+      {/* Moneyness cards */}
+      <div className="si" style={{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"16px"}}>
+        {rows.map((r, i) => (
+          <div key={i} style={{background:CA,border:"1px solid "+BD,borderRadius:"12px",padding:"16px 18px",borderLeft:"4px solid "+r.color}}>
+            <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px",flexWrap:"wrap"}}>
+              <span style={{display:"inline-block",padding:"3px 12px",borderRadius:"999px",background:r.color==="ITM"?"#e8faf3":r.color===OR?"#fff4eb":"#f7f0e6",color:r.color,fontWeight:"700",fontSize:"0.8rem"}}>{r.badge}</span>
+              <span style={{fontFamily:"Georgia,serif",fontWeight:"700",fontSize:"0.9rem",color:DK}}>Strike {r.strike}</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+              <div style={{background:"#f7f0e6",borderRadius:"8px",padding:"10px 12px"}}>
+                <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"5px"}}>Why it's {r.m}</div>
+                <div style={{fontSize:"0.78rem",color:"#3d2e1e",lineHeight:"1.55"}}>{r.why}</div>
+              </div>
+              <div style={{background:"#e8faf3",borderRadius:"8px",padding:"10px 12px"}}>
+                <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:GR,marginBottom:"5px"}}>Practical meaning</div>
+                <div style={{fontSize:"0.78rem",color:"#052e16",lineHeight:"1.55"}}>{r.practical}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Side-by-side comparison */}
+      <div style={{background:CA,border:"1px solid "+BD,borderRadius:"12px",overflow:"hidden",marginBottom:"16px"}}>
+        <div style={{background:"#f0e8da",padding:"12px 16px",borderBottom:"1px solid "+BD}}>
+          <div style={{fontWeight:"700",fontSize:"0.82rem",color:DK}}>📊 Side-by-side: Same strike, different option type</div>
+          <div style={{fontSize:"0.72rem",color:"#8a7560",marginTop:"2px"}}>Stock at $50 — see how ITM/OTM flips completely between Calls and Puts</div>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:"480px"}}>
+            <thead>
+              <tr style={{background:"#f7f0e6"}}>
+                <th style={{padding:"9px 14px",fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",textAlign:"left"}}>Strike</th>
+                <th style={{padding:"9px 14px",fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:GR,textAlign:"center"}}>📈 Call</th>
+                <th style={{padding:"9px 14px",fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:RD,textAlign:"center"}}>📉 Put</th>
+                <th style={{padding:"9px 14px",fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",textAlign:"left"}}>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                {s:"$46–$49", call:"ITM ✅", put:"OTM ⏳", callC:GR, putC:"#8a7560", why:"Below stock price — Calls love this, Puts need stock to fall further"},
+                {s:"$50",     call:"ATM ➡️", put:"ATM ➡️", callC:OR, putC:OR,         why:"Right at stock price — both are at the money"},
+                {s:"$51–$54", call:"OTM ⏳", put:"ITM ✅", callC:"#8a7560", putC:GR,  why:"Above stock price — Puts love this, Calls need stock to rise further"},
+              ].map((r,i) => (
+                <tr key={i} style={{borderBottom:"1px solid "+BD,background:i===1?"#fffcf7":"transparent"}}>
+                  <td style={{padding:"10px 14px",fontFamily:"Georgia,serif",fontWeight:"700",fontSize:"0.88rem",color:DK}}>{r.s}</td>
+                  <td style={{padding:"10px 14px",textAlign:"center"}}><span style={{fontWeight:"700",fontSize:"0.8rem",color:r.callC}}>{r.call}</span></td>
+                  <td style={{padding:"10px 14px",textAlign:"center"}}><span style={{fontWeight:"700",fontSize:"0.8rem",color:r.putC}}>{r.put}</span></td>
+                  <td style={{padding:"10px 14px",fontSize:"0.75rem",color:"#5a4535",lineHeight:"1.4"}}>{r.why}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Why it matters box */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px",marginBottom:"8px"}}>
+        {[
+          {icon:"💰",title:"ITM — Has value now",desc:"The stock has already moved in your favor. More expensive to buy but less movement needed.",color:GR},
+          {icon:"⚖️",title:"ATM — Right on the edge",desc:"Most active, most balanced. Delta near 0.50. Dominique's recommended starting zone.",color:OR},
+          {icon:"⏳",title:"OTM — Needs to move",desc:"Cheaper to buy. But the stock must move in your direction before expiration or it expires worthless.",color:"#8a7560"},
+        ].map(c => (
+          <div key={c.icon} style={{background:CA,border:"1px solid "+BD,borderRadius:"10px",padding:"14px",borderTop:"3px solid "+c.color}}>
+            <div style={{fontSize:"1.2rem",marginBottom:"6px"}}>{c.icon}</div>
+            <div style={{fontWeight:"700",fontSize:"0.8rem",color:DK,marginBottom:"4px"}}>{c.title}</div>
+            <div style={{fontSize:"0.72rem",color:"#5a4535",lineHeight:"1.5"}}>{c.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      <NextBtn label="Now see the Chain" onClick={onNext}/>
+    </div>
+  );
+}
+
+function Tab4() {
+  const [activeCol, setActiveCol] = useState(null);
+  const COLS = ["strike","ask","bid","last","delta","theta","gamma","vega","volume","oi"];
+
+  function handleCol(k) { setActiveCol(prev => prev === k ? null : k); }
+
+  function cellColor(k, v) {
+    if (k==="ask") return RD;
+    if (k==="bid") return BL;
+    if (k==="last") return "#8a7560";
+    if (k==="delta") return v>=0.40&&v<=0.60?GR:OR;
+    if (k==="theta") return RD;
+    if (k==="gamma") return PU;
+    if (k==="vega") return BL;
+    if (k==="volume") return v>=1000?GR:v>=300?GD:"#8a7560";
+    if (k==="oi") return v>=500?GR:v>=200?GD:RD;
+    return DK;
+  }
+
+  function cellDisplay(k, v) {
+    if (k==="ask"||k==="bid"||k==="last") return "$"+v.toFixed(2);
+    if (k==="delta"||k==="theta"||k==="gamma"||k==="vega") return v.toFixed(3);
+    if (k==="volume"||k==="oi") return fmtK(v);
+    return v;
+  }
+
+  return (
+    <div className="fu">
+      <div style={{marginBottom:"16px"}}>
+        <h2 style={{fontFamily:"Georgia,serif",fontSize:"1.4rem",color:DK,marginBottom:"5px"}}>The Chain</h2>
+        <p style={{fontSize:"0.85rem",color:"#8a7560",lineHeight:"1.55"}}>You have learned the terms and understood moneyness — now see it all in one place. Click any <strong style={{color:OR}}>column header</strong> to review what it means. Stock price in this example: <strong style={{fontFamily:"Georgia,serif",color:DK}}>${STOCK.toFixed(2)}</strong>.</p>
+      </div>
+
+      <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginBottom:"12px",background:CA,border:"1px solid "+BD,borderRadius:"10px",padding:"10px 14px",alignItems:"center"}}>
+        <span style={{fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560"}}>Moneyness (Call view):</span>
+        {[[GR,"ITM — Strike below $50"],[OR,"ATM — Strike at $50"],["#8a7560","OTM — Strike above $50"]].map(([c,l])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:"5px"}}>
+            <div style={{width:"8px",height:"8px",borderRadius:"50%",background:c,flexShrink:0}}/>
+            <span style={{fontSize:"0.7rem",color:"#5a4535"}}>{l}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:CA,border:"1px solid "+BD,borderRadius:"14px",overflow:"hidden"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:"680px"}}>
+            <thead>
+              <tr style={{background:"#f0e8da"}}>
+                <th style={{padding:"9px 10px",width:"28px"}}/>
+                {COLS.map(k => <ColHead key={k} colKey={k} activeCol={activeCol} onClick={handleCol}/>)}
+              </tr>
+            </thead>
+            <tbody>
+              {CHAIN.map(row => {
+                const m = getM(row.strike);
+                const rowBg = m==="ITM"?"#f4fcf8":m==="ATM"?"#fffcf7":CA;
+                return (
+                  <tr key={row.strike} style={{background:rowBg,borderBottom:"1px solid "+BD}}>
+                    <td style={{padding:"10px 8px",textAlign:"center"}}>
+                      <div style={{width:"4px",height:"26px",borderRadius:"2px",background:m==="ITM"?GR:m==="ATM"?OR:BD,margin:"0 auto"}}/>
+                    </td>
+                    <td onClick={() => handleCol("strike")} style={{padding:"10px 10px",cursor:"pointer",background:activeCol==="strike"?"#fffbf5":"transparent"}}>
+                      <div style={{fontFamily:"Georgia,serif",fontWeight:"700",fontSize:"0.92rem",color:m==="ITM"?GR:m==="ATM"?OR:DK,marginBottom:"3px"}}>${row.strike}</div>
+                      <MTag m={m}/>
+                    </td>
+                    {["ask","bid","last","delta","theta","gamma","vega","volume","oi"].map(k => (
+                      <td key={k} onClick={() => handleCol(k)} style={{padding:"10px 10px",cursor:"pointer",background:activeCol===k?"#fffbf5":"transparent",transition:"background 0.12s",borderLeft:activeCol===k?"2px solid "+(TERMS[k]?.color||OR)+"33":"2px solid transparent"}}>
+                        <span style={{fontFamily:k==="volume"||k==="oi"?"system-ui":"Georgia,serif",fontSize:"0.86rem",color:cellColor(k,row[k])}}>{cellDisplay(k,row[k])}</span>
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{padding:"8px 14px",borderTop:"1px solid "+BD,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px"}}>
+          <span style={{fontSize:"0.65rem",color:"#b0a090",fontStyle:"italic"}}>Example chain · For educational purposes only · Not a real ticker</span>
+          {activeCol && <button onClick={() => setActiveCol(null)} style={{background:"#f0e8da",border:"1px solid "+BD,borderRadius:"6px",padding:"3px 10px",fontSize:"0.65rem",color:"#8a7560",cursor:"pointer"}}>Clear ×</button>}
+        </div>
+      </div>
+
+      {activeCol ? <ChainInfoPanel colKey={activeCol}/> : (
+        <div style={{marginTop:"12px",background:CA,border:"2px dashed "+BD,borderRadius:"12px",padding:"20px",textAlign:"center"}}>
+          <div style={{fontSize:"1.3rem",marginBottom:"8px"}}>👆</div>
+          <div style={{fontWeight:"700",fontSize:"0.9rem",color:DK,marginBottom:"4px"}}>Click any column header to review what it means</div>
+          <div style={{fontSize:"0.78rem",color:"#8a7560",marginBottom:"14px"}}>You have learned all of these — now see where they live on the actual chain.</div>
+          <div style={{display:"flex",gap:"6px",justifyContent:"center",flexWrap:"wrap"}}>
+            {["strike","ask","bid","delta","theta","oi"].map(k=>(
+              <button key={k} onClick={() => handleCol(k)} style={{background:"#f0e8da",border:"1px solid "+BD,borderRadius:"999px",padding:"4px 12px",fontSize:"0.68rem",fontWeight:"700",letterSpacing:"0.08em",textTransform:"uppercase",color:"#5a4535",cursor:"pointer"}}>
+                {TERMS[k].icon} {k.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────
+function App() {
+  const [tab, setTab] = useState(0);
+
+  const TABS = [
+    {label:"What is an Option?",       icon:"📖"},
+    {label:"Learn the Terms",          icon:"🔢"},
+    {label:"In, At & Out of the Money",icon:"🎯"},
+    {label:"The Chain",                icon:"📊"},
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#F5F0E8"}}>
+      <div style={{background:DK,padding:"11px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontFamily:"Georgia,serif",fontStyle:"italic",fontSize:"1.2rem",color:"#fff"}}>demystified</span>
+        <span style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.15em",textTransform:"uppercase",color:"#9a7a55"}}>Options Education · v3</span>
+        <div style={{width:"22px",height:"22px",background:OR,borderRadius:"5px"}}/>
+      </div>
+
+      <div style={{maxWidth:"860px",margin:"0 auto",padding:"22px 16px"}}>
+        <div style={{marginBottom:"18px"}}>
+          <div style={{display:"inline-block",background:"#fff4eb",border:"1px solid #fad0a8",color:OR,fontSize:"0.62rem",fontWeight:"700",letterSpacing:"0.14em",textTransform:"uppercase",padding:"3px 10px",borderRadius:"999px",marginBottom:"8px"}}>
+            📘 Beginner Course
+          </div>
+          <h1 style={{fontFamily:"Georgia,serif",fontSize:"clamp(1.7rem,4vw,2.3rem)",color:DK,letterSpacing:"-0.03em",lineHeight:"1.15",marginBottom:"4px"}}>Decode the Chain</h1>
+          <p style={{color:"#8a7560",fontSize:"0.85rem"}}>Learn options from the ground up — at your own pace.</p>
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",gap:"3px",background:"#e4d8c8",borderRadius:"12px",padding:"3px",marginBottom:"10px"}}>
+          {TABS.map((t,i)=>(
+            <button key={i} onClick={()=>setTab(i)} style={{flex:1,padding:"9px 6px",border:"none",borderRadius:"9px",cursor:"pointer",fontWeight:"700",fontSize:"0.68rem",letterSpacing:"0.03em",transition:"all 0.18s",background:tab===i?"#fff":"transparent",color:tab===i?OR:"#8a7560",boxShadow:tab===i?"0 1px 6px rgba(0,0,0,0.09)":"none",lineHeight:"1.3"}}>
+              <div>{t.icon}</div>
+              <div style={{marginTop:"2px"}}>{t.label}</div>
+              {tab>i && <div style={{color:GR,fontSize:"10px",marginTop:"1px"}}>✓</div>}
+            </button>
+          ))}
+        </div>
+
+        {/* Progress bar */}
+        <div style={{height:"3px",background:"#e4d8c8",borderRadius:"2px",marginBottom:"20px"}}>
+          <div style={{height:"100%",width:[0,25,50,75,100][tab]+"%",background:OR,borderRadius:"2px",transition:"width 0.4s ease"}}/>
+        </div>
+
+        {tab===0 && <Tab1 onNext={()=>setTab(1)}/>}
+        {tab===1 && <Tab2 onNext={()=>setTab(2)}/>}
+        {tab===2 && <Tab3 onNext={()=>setTab(3)}/>}
+        {tab===3 && <Tab4/>}
+
+        <div style={{marginTop:"24px",textAlign:"center",fontSize:"0.65rem",color:"#b0a090",letterSpacing:"0.05em"}}>
+          <span style={{fontFamily:"Georgia,serif",fontStyle:"italic"}}>demystified</span> · For educational purposes only · Not financial advice · Options trading involves significant risk
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

@@ -557,7 +557,7 @@ function App() {
   const TABS = [
     {label:"What is an Option?",       icon:"📖"},
     {label:"Learn the Terms",          icon:"🔢"},
-    {label:"In, At & Out of the Money",icon:"🎯"},
+    {label:"Moneyness",                 icon:"🎯"},
     {label:"The Chain",                icon:"📊"},
   ];
 
@@ -584,7 +584,7 @@ function App() {
             <button key={i} onClick={()=>setTab(i)} style={{flex:1,padding:"9px 6px",border:"none",borderRadius:"9px",cursor:"pointer",fontWeight:"700",fontSize:"0.68rem",letterSpacing:"0.03em",transition:"all 0.18s",background:tab===i?"#fff":"transparent",color:tab===i?OR:"#8a7560",boxShadow:tab===i?"0 1px 6px rgba(0,0,0,0.09)":"none",lineHeight:"1.3"}}>
               <div>{t.icon}</div>
               <div style={{marginTop:"2px"}}>{t.label}</div>
-              {tab>i && <div style={{color:GR,fontSize:"10px",marginTop:"1px"}}>✓</div>}
+
             </button>
           ))}
         </div>

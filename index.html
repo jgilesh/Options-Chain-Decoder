@@ -148,33 +148,60 @@ function ColHead({ colKey, activeCol, onClick }) {
   );
 }
 
+// Condensed quick-reference panel — brief definition, threshold, rule only
+const CHAIN_QUICK = {
+  strike:{def:"The price at which you agree to buy the stock — locked in when you buy the contract.",threshold:null,zones:[{label:"Below stock price",status:"ITM",color:GR},{label:"At stock price",status:"ATM",color:OR},{label:"Above stock price",status:"OTM",color:"#8a7560"}]},
+  ask:{def:"What you pay to buy the contract. Always the higher of the two quoted prices.",threshold:"Multiply by 100 for your real cost. Ask $1.30 = $130 per contract.",zones:null},
+  bid:{def:"What you receive when you sell the contract. Always the lower of the two quoted prices.",threshold:"Spread = Ask − Bid. Under 5% is clean. Over 10%, enter with caution.",zones:null},
+  last:{def:"The most recent real transaction price — what a buyer and seller actually agreed on.",threshold:"Place your limit order between Last and Ask for a better entry than the full Ask.",zones:null},
+  delta:{def:"How much your contract moves for every $1 the stock moves.",threshold:null,zones:[{label:"0.80–1.00",status:"Deep ITM",color:GR},{label:"0.40–0.60 ✓",status:"Sweet Spot",color:OR},{label:"0.20–0.40",status:"OTM",color:GD},{label:"0.00–0.20",status:"Deep OTM",color:RD}]},
+  theta:{def:"How much value your contract loses every single day — even when the stock doesn't move.",threshold:"Theta should be no more than 50% of your Delta. Higher = time working too hard against you.",zones:[{label:"30+ days to expiry",status:"Safe",color:GR},{label:"15–30 days",status:"Caution",color:GD},{label:"Under 15 days",status:"Danger",color:RD}]},
+  gamma:{def:"How fast your Delta changes when the stock moves $1.",threshold:"Highest near ATM. Means your contract becomes more or less responsive as the stock moves.",zones:null},
+  vega:{def:"How much your contract's value changes for every 1% move in Implied Volatility.",threshold:"High Vega near earnings = extra risk. IV collapses after the announcement even if the stock moved your way.",zones:null},
+  volume:{def:"Total contracts traded today. Resets every morning at market open.",threshold:null,zones:[{label:"1,000+",status:"Active",color:GR},{label:"300–999",status:"Moderate",color:GD},{label:"Under 300",status:"Thin",color:"#8a7560"}]},
+  oi:{def:"Total open contracts not yet closed. Does not reset daily — a deeper liquidity measure.",threshold:null,zones:[{label:"500+ open interest",status:"Good",color:GR},{label:"200–500",status:"Caution",color:GD},{label:"Under 200",status:"Warning",color:RD}]},
+};
+
 function ChainInfoPanel({ colKey }) {
   const t = TERMS[colKey];
-  if (!t) return null;
+  const q = CHAIN_QUICK[colKey];
+  if (!t || !q) return null;
   return (
-    <div className="fu" style={{background:CA,border:"1px solid "+BD,borderRadius:"12px",padding:"16px 18px",marginTop:"12px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
-        <span style={{fontSize:"1.3rem"}}>{t.icon}</span>
+    <div className="fu" style={{background:CA,border:"1px solid "+BD,borderLeft:"4px solid "+t.color,borderRadius:"12px",padding:"14px 18px",marginTop:"8px"}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px"}}>
+        <span style={{fontSize:"1.2rem"}}>{t.icon}</span>
         <div>
-          <div style={{fontWeight:"700",fontSize:"1rem",color:DK}}>{t.label}</div>
-          <div style={{fontSize:"0.75rem",color:"#8a7560",fontStyle:"italic"}}>{t.short}</div>
+          <div style={{fontWeight:"700",fontSize:"0.95rem",color:DK}}>{t.label}</div>
+          <div style={{fontSize:"0.72rem",color:"#8a7560",fontStyle:"italic",marginTop:"1px"}}>{t.short}</div>
         </div>
+        <div style={{marginLeft:"auto",fontSize:"0.62rem",color:"#8a7560",fontStyle:"italic"}}>← See "Learn the Terms" for the full breakdown</div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px"}}>
-        <div style={{background:"#f7f0e6",borderRadius:"8px",padding:"10px 12px"}}>
+      {/* Content row */}
+      <div style={{display:"grid",gridTemplateColumns:q.zones?"1fr 1fr":"1fr",gap:"10px"}}>
+        <div>
           <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"5px"}}>📖 What it is</div>
-          <div style={{fontSize:"0.78rem",color:"#3d2e1e",lineHeight:"1.55"}}>{t.what}</div>
+          <div style={{fontSize:"0.8rem",color:"#3d2e1e",lineHeight:"1.55",marginBottom: q.threshold?"10px":"0"}}>{q.def}</div>
+          {q.threshold && (
+            <div style={{background:"linear-gradient(130deg,#1a1108,#2c1d0e)",borderRadius:"8px",padding:"9px 12px",marginTop:"8px"}}>
+              <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#9a7a55",marginBottom:"4px"}}>⚡ What to look for</div>
+              <div style={{fontSize:"0.78rem",color:"#e8ddd0",lineHeight:"1.55"}}>{q.threshold}</div>
+            </div>
+          )}
         </div>
-        <div style={{background:"#fff4eb",border:"1px solid #fad0a8",borderRadius:"8px",padding:"10px 12px"}}>
-          <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:OR,marginBottom:"5px"}}>🧠 Analogy</div>
-          <div style={{fontSize:"0.78rem",color:"#3d2e1e",lineHeight:"1.55",fontStyle:"italic"}}>{t.analogy}</div>
-        </div>
-        <div style={{background:t.rule?"linear-gradient(130deg,#1a1108,#2c1d0e)":"#e8faf3",borderRadius:"8px",padding:"10px 12px"}}>
-          <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:t.rule?"#9a7a55":"#065f46",marginBottom:"5px"}}>{t.rule?"⚡ The Rule":"📊 Example"}</div>
-          <div style={{fontSize:"0.78rem",color:t.rule?"#e8ddd0":"#052e16",lineHeight:"1.55"}}>{t.rule||t.example}</div>
-        </div>
+        {q.zones && (
+          <div>
+            <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"6px"}}>📊 Reference zones</div>
+            {q.zones.map((z,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 10px",borderRadius:"7px",background:"#f7f0e6",marginBottom:"4px"}}>
+                <div style={{width:"8px",height:"8px",borderRadius:"50%",background:z.color,flexShrink:0}}/>
+                <span style={{fontSize:"0.75rem",color:DK,fontWeight:"600",flex:1}}>{z.label}</span>
+                <span style={{fontSize:"0.65rem",fontWeight:"700",color:z.color,background:"#fff",padding:"1px 7px",borderRadius:"999px",border:"1px solid "+z.color+"33"}}>{z.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      {t.zones && <div style={{marginTop:"10px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"6px"}}>{t.zones.map((z,i)=><ZoneRow key={i} z={z}/>)}</div>}
     </div>
   );
 }
@@ -461,7 +488,7 @@ function Tab3() {
       <div style={{marginTop:"12px",background:CA,border:"1px solid "+BD,borderRadius:"12px",padding:"16px 20px"}}>
         <div style={{fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"10px",textAlign:"center"}}>Quick reference — tap any term to expand</div>
         <div style={{display:"flex",gap:"6px",justifyContent:"center",flexWrap:"wrap"}}>
-          {["strike","ask","bid","delta","theta","oi"].map(k=>(
+          {["strike","ask","bid","delta","theta","gamma","vega","oi"].map(k=>(
             <button key={k} onClick={() => handleCol(k)} style={{
               background: activeCol===k ? (TERMS[k]?.color||OR) : "#f0e8da",
               border: "1px solid "+(activeCol===k ? (TERMS[k]?.color||OR) : BD),
@@ -522,9 +549,7 @@ function App() {
 
       <div style={{maxWidth:"860px",margin:"0 auto",padding:"22px 16px"}}>
         <div style={{marginBottom:"18px"}}>
-          <div style={{display:"inline-block",background:"#fff4eb",border:"1px solid #fad0a8",color:OR,fontSize:"0.62rem",fontWeight:"700",letterSpacing:"0.14em",textTransform:"uppercase",padding:"3px 10px",borderRadius:"999px",marginBottom:"8px"}}>
-            📘 Options Education
-          </div>
+
           <h1 style={{fontFamily:"Georgia,serif",fontSize:"clamp(1.7rem,4vw,2.3rem)",color:DK,letterSpacing:"-0.03em",lineHeight:"1.15",marginBottom:"4px"}}>The Options Chain</h1>
           <p style={{color:"#8a7560",fontSize:"0.85rem"}}>Your Options Trading reference guide.</p>
         </div>
@@ -547,7 +572,7 @@ function App() {
         {tab===2 && <Tab3/>}
 
         <div style={{marginTop:"24px",textAlign:"center",fontSize:"0.65rem",color:"#b0a090",letterSpacing:"0.05em"}}>
-          <span style={{fontFamily:"Georgia,serif",fontStyle:"italic"}}>demystified</span> · For educational purposes only · Not financial advice · Options trading involves significant risk
+          <span style={{fontFamily:"Georgia,serif",fontStyle:"italic"}}>demystified</span> · For educational purposes only
         </div>
       </div>
     </div>

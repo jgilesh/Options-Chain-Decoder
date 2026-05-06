@@ -163,13 +163,21 @@ const CHAIN_QUICK = {
 };
 
 function ChainInfoPanel({ colKey }) {
+  const [strikeMode, setStrikeMode] = useState("call");
   const t = TERMS[colKey];
   const q = CHAIN_QUICK[colKey];
   if (!t || !q) return null;
+
+  const isStrike = colKey === "strike";
+  const strikeZones = strikeMode === "call"
+    ? [{label:"Below stock price",status:"ITM",color:GR},{label:"At stock price",status:"ATM",color:OR},{label:"Above stock price",status:"OTM",color:"#8a7560"}]
+    : [{label:"Above stock price",status:"ITM",color:GR},{label:"At stock price",status:"ATM",color:OR},{label:"Below stock price",status:"OTM",color:"#8a7560"}];
+  const activeZones = isStrike ? strikeZones : q.zones;
+
   return (
     <div className="fu" style={{background:CA,border:"1px solid "+BD,borderLeft:"4px solid "+t.color,borderRadius:"12px",padding:"14px 18px",marginTop:"8px"}}>
       {/* Header */}
-      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px",flexWrap:"wrap"}}>
         <span style={{fontSize:"1.2rem"}}>{t.icon}</span>
         <div>
           <div style={{fontWeight:"700",fontSize:"0.95rem",color:DK}}>{t.label}</div>
@@ -177,11 +185,27 @@ function ChainInfoPanel({ colKey }) {
         </div>
         <div style={{marginLeft:"auto",fontSize:"0.62rem",color:"#8a7560",fontStyle:"italic"}}>← See "Learn the Terms" for the full breakdown</div>
       </div>
+
+      {/* Strike toggle */}
+      {isStrike && (
+        <div style={{display:"flex",gap:"3px",background:"#e4d8c8",borderRadius:"8px",padding:"3px",marginBottom:"12px",maxWidth:"220px"}}>
+          {[["call","📈 Call"],["put","📉 Put"]].map(([m,l])=>(
+            <button key={m} onClick={()=>setStrikeMode(m)} style={{
+              flex:1, padding:"6px 10px", border:"none", borderRadius:"6px", cursor:"pointer",
+              fontWeight:"700", fontSize:"0.72rem", transition:"all 0.15s",
+              background: strikeMode===m ? "#fff" : "transparent",
+              color: strikeMode===m ? (m==="call" ? GR : RD) : "#8a7560",
+              boxShadow: strikeMode===m ? "0 1px 4px rgba(0,0,0,0.1)" : "none",
+            }}>{l}</button>
+          ))}
+        </div>
+      )}
+
       {/* Content row */}
-      <div style={{display:"grid",gridTemplateColumns:q.zones?"1fr 1fr":"1fr",gap:"10px"}}>
+      <div style={{display:"grid",gridTemplateColumns:activeZones?"1fr 1fr":"1fr",gap:"10px"}}>
         <div>
           <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"5px"}}>📖 What it is</div>
-          <div style={{fontSize:"0.8rem",color:"#3d2e1e",lineHeight:"1.55",marginBottom: q.threshold?"10px":"0"}}>{q.def}</div>
+          <div style={{fontSize:"0.8rem",color:"#3d2e1e",lineHeight:"1.55",marginBottom:q.threshold?"10px":"0"}}>{q.def}</div>
           {q.threshold && (
             <div style={{background:"linear-gradient(130deg,#1a1108,#2c1d0e)",borderRadius:"8px",padding:"9px 12px",marginTop:"8px"}}>
               <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#9a7a55",marginBottom:"4px"}}>⚡ What to look for</div>
@@ -189,10 +213,12 @@ function ChainInfoPanel({ colKey }) {
             </div>
           )}
         </div>
-        {q.zones && (
+        {activeZones && (
           <div>
-            <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"6px"}}>📊 Reference zones</div>
-            {q.zones.map((z,i)=>(
+            <div style={{fontSize:"0.6rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"6px"}}>
+              {isStrike ? (strikeMode==="call"?"📈 Call — Moneyness":"📉 Put — Moneyness") : "📊 Reference zones"}
+            </div>
+            {activeZones.map((z,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 10px",borderRadius:"7px",background:"#f7f0e6",marginBottom:"4px"}}>
                 <div style={{width:"8px",height:"8px",borderRadius:"50%",background:z.color,flexShrink:0}}/>
                 <span style={{fontSize:"0.75rem",color:DK,fontWeight:"600",flex:1}}>{z.label}</span>
@@ -277,7 +303,7 @@ function Tab1({ onNext }) {
           {group.keys.map(k => <TermCard key={k} termKey={k} isOpen={open===k} onToggle={()=>toggle(k)}/>)}
         </div>
       ))}
-      <NextBtn label="Next: In, At & Out of the Money" onClick={onNext}/>
+      <NextBtn label="Next: Moneyness" onClick={onNext}/>
     </div>
   );
 }
@@ -299,7 +325,7 @@ function Tab2({ onNext }) {
   return (
     <div className="fu">
       <div style={{marginBottom:"18px"}}>
-        <h2 style={{fontFamily:"Georgia,serif",fontSize:"1.4rem",color:DK,marginBottom:"5px"}}>In, At &amp; Out of the Money</h2>
+        <h2 style={{fontFamily:"Georgia,serif",fontSize:"1.4rem",color:DK,marginBottom:"5px"}}>Moneyness</h2>
         <p style={{fontSize:"0.85rem",color:"#8a7560",lineHeight:"1.55"}}>Where your strike price sits relative to the current stock price determines whether your option has value right now — or still needs the stock to move. This is called <strong style={{color:DK}}>moneyness</strong>.</p>
       </div>
       <div style={{background:"linear-gradient(130deg,#1a1108,#2c1d0e)",borderRadius:"12px",padding:"16px 20px",marginBottom:"16px"}}>
@@ -430,7 +456,7 @@ function Tab3() {
           ))}
         </div>
         <div style={{fontSize:"0.75rem",color:"#5a4535",lineHeight:"1.55",background:"#f7f0e6",borderRadius:"8px",padding:"9px 12px"}}>
-          On a real platform, expiration date tabs sit across the top. <strong style={{color:PU}}>Always choose 30+ days</strong> — anything under that and Theta starts working hard against you. The chain below belongs to whichever expiration you select. The example chain here assumes a 33-day expiration.
+          On a real platform, expiration date tabs sit across the top. For beginners, 30+ days is the recommended starting point — it gives your trade time to breathe and slows time decay. Keep in mind that as expiration gets closer, Theta accelerates. The chain below belongs to whichever expiration you select. The example chain here assumes a 33-day expiration.
         </div>
       </div>
       <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginBottom:"12px",background:CA,border:"1px solid "+BD,borderRadius:"10px",padding:"10px 14px",alignItems:"center"}}>
@@ -443,7 +469,7 @@ function Tab3() {
         ))}
         <div style={{marginLeft:"auto",background:"#fff4eb",border:"1px solid #fad0a8",borderRadius:"6px",padding:"4px 10px",display:"flex",alignItems:"center",gap:"5px",flexShrink:0}}>
           <span style={{fontSize:"0.8rem"}}>💡</span>
-          <span style={{fontSize:"0.7rem",fontWeight:"700",color:"#6b4b28"}}>1 contract = 100 shares &nbsp;·&nbsp; Bid or Ask × 100 = your total cost</span>
+          <span style={{fontSize:"0.7rem",fontWeight:"700",color:"#6b4b28"}}>1 contract = 100 shares &nbsp;·&nbsp; Ask × 100 = your cost to buy</span>
         </div>
       </div>
       <div style={{background:CA,border:"1px solid "+BD,borderRadius:"14px",overflow:"hidden"}}>
@@ -486,40 +512,39 @@ function Tab3() {
 
       {/* Always-visible toggle shortcuts */}
       <div style={{marginTop:"12px",background:CA,border:"1px solid "+BD,borderRadius:"12px",padding:"16px 20px"}}>
-        <div style={{fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"10px",textAlign:"center"}}>Quick reference — tap any term to expand</div>
-        <div style={{display:"flex",gap:"6px",justifyContent:"center",flexWrap:"wrap"}}>
-          {["strike","ask","bid","delta","theta","gamma","vega","oi"].map(k=>(
-            <button key={k} onClick={() => handleCol(k)} style={{
-              background: activeCol===k ? (TERMS[k]?.color||OR) : "#f0e8da",
-              border: "1px solid "+(activeCol===k ? (TERMS[k]?.color||OR) : BD),
-              borderRadius:"999px",
-              padding:"6px 14px",
-              fontSize:"0.68rem",
-              fontWeight:"700",
-              letterSpacing:"0.08em",
-              textTransform:"uppercase",
-              color: activeCol===k ? "#fff" : "#5a4535",
-              cursor:"pointer",
-              transition:"all 0.15s",
-            }}>
-              {TERMS[k].icon} {k.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        <div style={{fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.1em",textTransform:"uppercase",color:"#8a7560",marginBottom:"14px",textAlign:"center"}}>Quick reference — tap any term to expand</div>
+        {[
+          {label:"💵 Pricing", keys:["strike","ask","bid","last"]},
+          {label:"🔢 Greeks",  keys:["delta","theta","gamma","vega"]},
+          {label:"💧 Liquidity",keys:["volume","oi"]},
+        ].map(group => (
+          <div key={group.label} style={{marginBottom:"12px"}}>
+            <div style={{fontSize:"0.58rem",fontWeight:"700",letterSpacing:"0.12em",textTransform:"uppercase",color:"#b0a090",marginBottom:"7px"}}>{group.label}</div>
+            <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+              {group.keys.map(k=>(
+                <button key={k} onClick={() => handleCol(k)} style={{
+                  background: activeCol===k ? (TERMS[k]?.color||OR) : "#f0e8da",
+                  border: "1px solid "+(activeCol===k ? (TERMS[k]?.color||OR) : BD),
+                  borderRadius:"999px",
+                  padding:"6px 14px",
+                  fontSize:"0.68rem",
+                  fontWeight:"700",
+                  letterSpacing:"0.08em",
+                  textTransform:"uppercase",
+                  color: activeCol===k ? "#fff" : "#5a4535",
+                  cursor:"pointer",
+                  transition:"all 0.15s",
+                }}>
+                  {TERMS[k].icon} {k.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
       {activeCol && <ChainInfoPanel colKey={activeCol}/>}
 
-      <div style={{marginTop:"20px",background:"linear-gradient(130deg,#1a1108,#2c1d0e)",borderRadius:"14px",padding:"20px 22px",display:"flex",alignItems:"center",gap:"16px",flexWrap:"wrap"}}>
-        <div style={{fontSize:"1.8rem",flexShrink:0}}>📋</div>
-        <div style={{flex:1}}>
-          <div style={{fontSize:"0.65rem",fontWeight:"700",letterSpacing:"0.15em",textTransform:"uppercase",color:"#9a7a55",marginBottom:"5px"}}>Ready to put this into practice?</div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:"1rem",color:"#fff",marginBottom:"5px"}}>Use the Pre-Trade Checklist before entering any trade.</div>
-          <div style={{fontSize:"0.78rem",color:"#d4a87a",lineHeight:"1.55"}}>Now that you know what Delta, Theta, Expiration, and the chain mean — the checklist walks you through 5 questions to evaluate a specific trade before you enter it.</div>
-        </div>
-        <a href="https://pre-trade-checklist.vercel.app/" target="_blank" rel="noopener noreferrer" style={{flexShrink:0,background:OR,borderRadius:"999px",padding:"10px 22px",fontWeight:"700",fontSize:"0.8rem",color:"#fff",letterSpacing:"0.06em",whiteSpace:"nowrap",textDecoration:"none",display:"inline-block"}}>
-          Open Checklist →
-        </a>
-      </div>
+
     </div>
   );
 }
